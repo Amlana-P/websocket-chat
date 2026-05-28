@@ -1,10 +1,13 @@
 "use strict";
 
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 const { URL } = require("url");
 const { WebSocketServer, WebSocket } = require("ws");
 
 const PORT = Number(process.env.PORT) || 8080;
+const INDEX_FILE = path.join(__dirname, "index.html");
 const rooms = new Map();
 const clients = new WeakMap();
 let userSequence = 1;
@@ -76,6 +79,20 @@ const server = http.createServer((req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
 
   if (requestUrl.pathname === "/") {
+    fs.readFile(INDEX_FILE, (error, html) => {
+      if (error) {
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end("Failed to load chat UI");
+        return;
+      }
+
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(html);
+    });
+    return;
+  }
+
+  if (requestUrl.pathname === "/info") {
     const roomId = requestUrl.searchParams.get("roomid")?.trim() || null;
     const username = requestUrl.searchParams.get("username")?.trim() || null;
 

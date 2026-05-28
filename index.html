@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Room Chat</title>
+    <style>
+      :root {
+        --bg: linear-gradient(145deg, #fff5e6 0%, #e7f4ff 60%, #e9ffe8 100%);
+        --card: #ffffffcc;
+        --ink: #1e1f26;
+        --subtle: #616878;
+        --accent: #0077cc;
+        --accent-dark: #005f9f;
+        --ok: #0f9d58;
+        --warn: #bf4d00;
+        --border: #d4d9e3;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Avenir Next", "Segoe UI", Roboto, sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+      }
+
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 20px 14px 16px;
+      }
+
+      .card {
+        background: var(--card);
+        backdrop-filter: blur(3px);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: 0 14px 28px rgba(35, 55, 95, 0.1);
+      }
+
+      .header {
+        padding: 16px 16px 10px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 1.3rem;
+        letter-spacing: 0.02em;
+      }
+
+      .subtitle {
+        margin: 8px 0 0;
+        color: var(--subtle);
+        font-size: 0.9rem;
+      }
+
+      .join {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 1fr 1fr auto;
+        padding: 10px 16px 16px;
+      }
+
+      input,
+      button {
+        font: inherit;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        padding: 12px 13px;
+      }
+
+      input {
+        background: #fff;
+        color: var(--ink);
+      }
+
+      input:focus,
+      button:focus {
+        outline: 2px solid #83c1ff;
+        outline-offset: 1px;
+      }
+
+      button {
+        border: none;
+        color: #fff;
+        background: var(--accent);
+        font-weight: 600;
+      }
+
+      button:hover {
+        background: var(--accent-dark);
+      }
+
+      button:disabled {
+        opacity: 0.55;
+      }
+
+      .status {
+        padding: 0 16px 12px;
+        color: var(--warn);
+        font-size: 0.9rem;
+        min-height: 22px;
+      }
+
+      .status.ok {
+        color: var(--ok);
+      }
+
+      .messages {
+        height: min(58vh, 520px);
+        overflow-y: auto;
+        padding: 12px;
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .msg {
+        background: #fff;
+        border: 1px solid #dbe2ed;
+        border-radius: 12px;
+        padding: 9px 11px;
+        margin: 8px 0;
+      }
+
+      .meta {
+        font-size: 0.74rem;
+        color: var(--subtle);
+      }
+
+      .body {
+        margin-top: 4px;
+        line-height: 1.35;
+      }
+
+      .composer {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 12px;
+      }
+
+      @media (max-width: 700px) {
+        .join {
+          grid-template-columns: 1fr;
+        }
+        .composer {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="card">
+        <header class="header">
+          <h1 class="title">Personal Group Chat</h1>
+          <p class="subtitle">
+            Share this page link with your friends. Everyone who joins the same
+            room ID can chat.
+          </p>
+        </header>
+
+        <div class="join">
+          <input id="roomId" placeholder="Room ID (example: room1)" />
+          <input id="username" placeholder="Username (example: Alice)" />
+          <button id="joinBtn">Join</button>
+        </div>
+
+        <div id="status" class="status">Not connected</div>
+
+        <div id="messages" class="messages"></div>
+
+        <form id="composer" class="composer">
+          <input
+            id="messageInput"
+            autocomplete="off"
+            placeholder="Type your message"
+            disabled
+          />
+          <button id="sendBtn" type="submit" disabled>Send</button>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      const roomIdInput = document.getElementById("roomId");
+      const usernameInput = document.getElementById("username");
+      const joinBtn = document.getElementById("joinBtn");
+      const statusEl = document.getElementById("status");
+      const messagesEl = document.getElementById("messages");
+      const composer = document.getElementById("composer");
+      const messageInput = document.getElementById("messageInput");
+      const sendBtn = document.getElementById("sendBtn");
+
+      let socket = null;
+      let currentRoom = "";
+      let currentUser = "";
+
+      function setStatus(message, isOk) {
+        statusEl.textContent = message;
+        statusEl.className = isOk ? "status ok" : "status";
+      }
+
+      function addMessage(meta, body) {
+        const item = document.createElement("div");
+        item.className = "msg";
+        const safeMeta = meta.replace(/[<>]/g, "");
+        const safeBody = body.replace(/[<>]/g, "");
+        item.innerHTML = '<div class="meta">' + safeMeta + "</div>" +
+          '<div class="body">' + safeBody + "</div>";
+        messagesEl.appendChild(item);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function canSend() {
+        return socket && socket.readyState === WebSocket.OPEN;
+      }
+
+      function setComposerEnabled(enabled) {
+        messageInput.disabled = !enabled;
+        sendBtn.disabled = !enabled;
+      }
+
+      function wsUrl(roomId, username) {
+        const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+        return (
+          protocol +
+          "://" +
+          window.location.host +
+          "/?roomid=" +
+          encodeURIComponent(roomId) +
+          "&username=" +
+          encodeURIComponent(username)
+        );
+      }
+
+      function connect() {
+        const roomId = roomIdInput.value.trim();
+        const username = usernameInput.value.trim();
+
+        if (!roomId || !username) {
+          setStatus("Enter both room ID and username", false);
+          return;
+        }
+
+        if (socket) {
+          socket.close();
+        }
+
+        currentRoom = roomId;
+        currentUser = username;
+        setStatus("Connecting...", false);
+        setComposerEnabled(false);
+
+        socket = new WebSocket(wsUrl(roomId, username));
+
+        socket.onopen = () => {
+          setStatus("Connected to room " + currentRoom, true);
+          setComposerEnabled(true);
+          messageInput.focus();
+          addMessage("system", "You joined room " + currentRoom + " as " + currentUser);
+        };
+
+        socket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "message") {
+              addMessage(data.from + " | " + new Date(data.sentAt).toLocaleTimeString(), data.message);
+              return;
+            }
+            if (data.type === "system") {
+              addMessage("system", data.message);
+              return;
+            }
+            if (data.type === "connected") {
+              addMessage("system", data.message);
+              return;
+            }
+          } catch {
+            addMessage("server", String(event.data));
+          }
+        };
+
+        socket.onclose = () => {
+          setStatus("Disconnected", false);
+          setComposerEnabled(false);
+        };
+
+        socket.onerror = () => {
+          setStatus("Connection error", false);
+          setComposerEnabled(false);
+        };
+      }
+
+      joinBtn.addEventListener("click", connect);
+
+      composer.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const text = messageInput.value.trim();
+        if (!text || !canSend()) {
+          return;
+        }
+        socket.send(JSON.stringify({ message: text }));
+        addMessage("you | " + new Date().toLocaleTimeString(), text);
+        messageInput.value = "";
+      });
+
+      const query = new URLSearchParams(window.location.search);
+      const queryRoom = query.get("roomid");
+      const queryUser = query.get("username");
+      if (queryRoom) {
+        roomIdInput.value = queryRoom;
+      }
+      if (queryUser) {
+        usernameInput.value = queryUser;
+      }
+      if (queryRoom && queryUser) {
+        connect();
+      }
+    </script>
+  </body>
+</html>
