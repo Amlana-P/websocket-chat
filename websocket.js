@@ -73,7 +73,12 @@ function getMessageText(rawData) {
 }
 
 const server = http.createServer((req, res) => {
-  if (req.url === "/") {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+
+  if (requestUrl.pathname === "/") {
+    const roomId = requestUrl.searchParams.get("roomid")?.trim() || null;
+    const username = requestUrl.searchParams.get("username")?.trim() || null;
+
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify(
@@ -81,9 +86,14 @@ const server = http.createServer((req, res) => {
           app: "Room-based WebSocket Messaging",
           wsEndpoint:
             "ws://<host>:8080/?roomid=<room-id>&username=<your-name>",
+          requested: {
+            roomId,
+            username,
+          },
           notes: [
             "roomid is required",
             "message is broadcast to everyone in the same room except sender",
+            "use wss:// on hosted environments like Render",
           ],
         },
         null,
