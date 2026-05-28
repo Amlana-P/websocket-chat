@@ -1,0 +1,13 @@
+{
+  "name": "websocket-room-messaging",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Room-based WebSocket messaging app using roomid query parameter",
+  "main": "websocket.js",
+  "scripts": {
+    "start": "node websocket.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
